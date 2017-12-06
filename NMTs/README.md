@@ -1,5 +1,5 @@
-# Keras-LSTM-Exercise
-Playing with Keras. 
+# Neural Machine Translation
+
 Following a tutorial from the official Keras blog, I was trying to develop a simple code for Neural Machine Translation.
 
 I used the word-level model, for English-Chinese translation. 
