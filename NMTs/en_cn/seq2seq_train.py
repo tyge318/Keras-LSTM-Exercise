@@ -1,29 +1,26 @@
-
-# coding: utf-8
-
-# In[1]:
-
-from keras.models import Model
+from keras.models import Model, load_model
 from keras.preprocessing.sequence import pad_sequences
 from keras.models import Sequential
 from keras.layers import Input, LSTM, Dense
-from keras.layers.embeddings import Embedding
+from keras.layers import Embedding
 import numpy as np
 import jieba
-import re
+import re, pickle
 
 
-# In[2]:
+# In[8]:
 
 batch_size = 64
 epochs = 100
 latent_dim = 256
 num_samples = 10000
 
+BOS, EOS = '😀', '🔴'
+
 
 # ## Loading data
 
-# In[3]:
+# In[9]:
 
 input_texts, output_texts = [], []
 en_vocs, cn_vocs = set(), set()
@@ -38,7 +35,7 @@ with open('cmn.txt', 'r') as f:
         en_vocs.update(en_words)
         # remove Chinese punctuations
         output_text = re.sub( "[\s+\.\!\/_,$%^*(+\"\']+|[+——！，。?？、~@#￥%……&*（ ）]+", '',output_text)  
-        cn_tokens = ['\t']+list(jieba.cut(output_text))+['\n']
+        cn_tokens = [BOS]+list(jieba.cut(output_text))+[EOS]
         cn_vocs.update(cn_tokens)
         input_texts.append(en_words)
         output_texts.append(cn_tokens)
@@ -49,7 +46,7 @@ with open('cmn.txt', 'r') as f:
 
 # ## Generate word-int mapping
 
-# In[4]:
+# In[10]:
 
 en_vocs = sorted(list(en_vocs))
 cn_vocs = sorted(list(cn_vocs))
@@ -70,7 +67,7 @@ print('Max sequence length for outputs:', max_decoder_seq_length)
 
 # ## Vectorization and Padding
 
-# In[5]:
+# In[11]:
 
 int_input_data = [[en_to_int[w] for w in row] for row in input_texts]
 int_output_data = [[cn_to_int[w] for w in row] for row in output_texts]
@@ -88,33 +85,79 @@ for i, row in enumerate(int_output_data):
         decoder_target_data[i, t-1, w] = 1
 #print(decoder_target_data.shape)
 
+'''
+for i in range(2):
+    print('Input texts = %s' % (' '.join(input_texts[i])))
+    print('Input int = %s' % int_input_data[i])
+    print('Padded input = %s' % encoder_input_data[i])
+    
+    print('Output texts = %s' % (''.join(output_texts[i])))
+    print('Output int = %s' % (int_output_data[i]))
+    print('Padded output = %s' % (decoder_input_data[i]))
+'''
+
+# ## Load Pre-trained embedding
+
+# In[12]:
+
+with open('en_to_vec.pickle', 'rb') as handle:
+    en_to_vec = pickle.load(handle)
+
+embedding_matrix_en = np.zeros((num_encoder_tokens, latent_dim))
+for word, i in en_to_int.items():
+    embedding_vector = en_to_vec.get(word)
+    if embedding_vector is not None:
+        # words not found in embedding index will be all-zeros.
+        embedding_matrix_en[i] = embedding_vector
+        
+with open('cn_to_vec.pickle', 'rb') as handle:
+    cn_to_vec = pickle.load(handle)
+
+embedding_matrix_cn = np.zeros((num_decoder_tokens, latent_dim))
+for word, i in cn_to_int.items():
+    embedding_vector = cn_to_vec.get(word)
+    if embedding_vector is not None:
+        # words not found in embedding index will be all-zeros.
+        embedding_matrix_cn[i] = embedding_vector   
+
+
+# ## Define embedding layer
+
+# In[13]:
+
+embedding_layer_en = Embedding(input_dim=num_encoder_tokens,
+                            output_dim=latent_dim,
+                            weights=[embedding_matrix_en],
+                            input_length=max_encoder_seq_length,
+                            trainable=False)
+
+embedding_layer_cn = Embedding(input_dim=num_decoder_tokens,
+                            output_dim=latent_dim,
+                            weights=[embedding_matrix_cn],
+                            input_length=max_decoder_seq_length,
+                            trainable=False)
+
 
 # ## Define the model
 
 # In[ ]:
+
 # Define the input sequence
 encoder_inputs = Input(shape=(None,))
-encoder = LSTM(latent_dim, return_state=True)
-embedding_inputs = Embedding(num_encoder_tokens, latent_dim)(encoder_inputs)
-_, state_h, state_c = encoder(embedding_inputs)
+y = embedding_layer_en(encoder_inputs)
+_, state_h, state_c = LSTM(latent_dim, return_state=True)(y)
 encoder_states = [state_h, state_c]
 
 # Set up the decoder and use encoder_states as initial state
 decoder_inputs = Input(shape=(None,))
-embedding_inputs = Embedding(num_decoder_tokens, latent_dim)(decoder_inputs)
+y = embedding_layer_cn(decoder_inputs)
 decoder_lstm = LSTM(latent_dim, return_sequences=True,return_state=True)
-x, _, _ = decoder_lstm(embedding_inputs, initial_state=encoder_states)
+x, _, _ = decoder_lstm(y, initial_state=encoder_states)
 decoder_outputs = Dense(num_decoder_tokens, activation='softmax')(x)
 
 model = Model([encoder_inputs, decoder_inputs], decoder_outputs)
 model.compile(optimizer='rmsprop', loss='categorical_crossentropy')
+
 model.fit([encoder_input_data, decoder_input_data], decoder_target_data,
           batch_size=batch_size, epochs=epochs,validation_split=0.2)
-
 model.save('s2s.h5')
-
-
-# In[ ]:
-
-
-
