@@ -14,11 +14,8 @@ from keras.preprocessing.sequence import pad_sequences
 raw_texts = open("wonderland.txt").read()
 raw_texts = raw_texts.strip().lower()
 
-sentences = list(map(lambda x: nltk.word_tokenize(x), sent_tokenize(raw_texts)))
-sentences = [['@']+sent+['#'] for sent in sentences]
-
-words = [word for sentence in sentences for word in sentence]
-words = sorted(list(set(words)))
+raw_words = nltk.word_tokenize(raw_texts)
+words = sorted(list(set(raw_words)))
 word_to_index = {w: i+1 for i, w in enumerate(words)}
 index_to_word = {i+1: w for i, w in enumerate(words)}
 
@@ -27,11 +24,9 @@ print('Total number of words:', n_vocab)
 
 sent_len = 10
 dataX, dataY = [], []
-for sent in sentences:
-    for i in range(1, len(sent)):
-        dataX.append([word_to_index[w] for w in sent[:i]])
-        dataY.append(word_to_index[sent[i]])
-dataX = pad_sequences(dataX, sent_len)
+for i in range(len(raw_words) - sent_len):
+    dataX.append([word_to_index[w] for w in raw_words[i:i+sent_len]])
+    dataY.append(word_to_index[raw_words[i+sent_len]])
 n_patterns = len(dataX)
 print('Total Patterns:', n_patterns)
 
